@@ -31,6 +31,7 @@ export function insertChaptersFile(
 			.values({
 				repoRoot: repo.root,
 				originUrl: repo.originUrl,
+				headBranch: repo.headBranch,
 				scopeKind: file.scope.kind,
 				workingTreeRef: file.scope.kind === SCOPE_KIND.WORKING_TREE ? file.scope.ref : null,
 				baseSha: file.scope.baseSha,

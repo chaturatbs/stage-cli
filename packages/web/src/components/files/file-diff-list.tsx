@@ -1,3 +1,4 @@
+import type { SelectedLineRange } from "@pierre/diffs";
 import { FileCode } from "lucide-react";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { FileHeader } from "@/components/chapter/file-header";
@@ -41,6 +42,8 @@ interface FileDiffListProps {
 	onToggleViewed?: (path: string) => void;
 	collapseState: CollapseState;
 	chapterOverlay?: ChapterOverlayProps;
+	/** Per-file line ranges to highlight via Pierre's native selection (e.g. the active comment). */
+	selectedLinesByFile?: ReadonlyMap<string, SelectedLineRange>;
 }
 
 const FILE_TOP_PADDING = 16;
@@ -48,7 +51,15 @@ const SCROLL_TO_LINE_POLL_MS = 100;
 const SCROLL_TO_LINE_TIMEOUT_MS = 3000;
 
 export const FileDiffList = forwardRef<FileDiffListHandle, FileDiffListProps>(function FileDiffList(
-	{ entries, emptyMessage, viewedPathSet, onToggleViewed, collapseState, chapterOverlay },
+	{
+		entries,
+		emptyMessage,
+		viewedPathSet,
+		onToggleViewed,
+		collapseState,
+		chapterOverlay,
+		selectedLinesByFile,
+	},
 	ref,
 ) {
 	const scrollRequestRef = useRef(0);
@@ -200,6 +211,7 @@ export const FileDiffList = forwardRef<FileDiffListHandle, FileDiffListProps>(fu
 					onToggleViewed={onToggleViewed}
 					collapseState={collapseState}
 					chapterOverlay={chapterOverlay}
+					selectedLines={selectedLinesByFile?.get(entry.file.path) ?? null}
 				/>
 			))}
 		</div>
@@ -212,6 +224,7 @@ interface FileDiffSectionProps {
 	onToggleViewed?: (path: string) => void;
 	collapseState: CollapseState;
 	chapterOverlay?: ChapterOverlayProps;
+	selectedLines: SelectedLineRange | null;
 }
 
 function FileDiffSection({
@@ -220,6 +233,7 @@ function FileDiffSection({
 	onToggleViewed,
 	collapseState,
 	chapterOverlay,
+	selectedLines,
 }: FileDiffSectionProps) {
 	const { file, diff } = entry;
 	const isCollapsed = collapseState.collapsedFiles.has(file.path);
@@ -254,6 +268,7 @@ function FileDiffSection({
 				<PierreDiffViewer
 					fileDiff={diff}
 					filePath={file.path}
+					selectedLines={selectedLines}
 					expandUnchanged={isExpanded}
 					allLineRefsByFile={chapterOverlay?.allLineRefsByFile}
 					focusedLineRefsByFile={chapterOverlay?.focusedLineRefsByFile}

@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import open from "open";
 import { buildOtherChangesChapter } from "./build-other-changes.js";
@@ -6,7 +7,10 @@ import { closeDb, getDb } from "./db/client.js";
 import { parseGitDiff } from "./diff-parser.js";
 import { filterFilesForLlm } from "./filter-files.js";
 import { readRepoContext, resolveScope } from "./git.js";
+import { commentRoutes } from "./routes/comments.js";
+import { contextRoutes } from "./routes/context.js";
 import { diffRoutes } from "./routes/diff.js";
+import { prRoutes } from "./routes/pr.js";
 import { runRoutes } from "./routes/runs.js";
 import { viewStateRoutes } from "./routes/view-state.js";
 import { insertChaptersFile } from "./runs/import-chapters.js";
@@ -23,10 +27,23 @@ import { LOOPBACK_HOST, startServer } from "./server.js";
 export async function show(jsonPath: string, base?: string): Promise<void> {
 	const db = getDb();
 	const chaptersFile = loadChaptersFile(jsonPath, base);
-	const { runId } = insertChaptersFile(db, chaptersFile, readRepoContext());
+
+	// Prefer the branch encoded in the run JSON's path — it survives the
+	// snapshot-SHA viewing workflow, where git HEAD is detached and
+	// `readRepoContext` can't recover the branch.
+	const repo = readRepoContext();
+	const headBranch = parseBranchFromRunPath(jsonPath) ?? repo.headBranch;
+	const { runId } = insertChaptersFile(db, chaptersFile, { ...repo, headBranch });
 
 	const handle = await startServer({
-		routes: [...runRoutes(db), ...viewStateRoutes(db), ...diffRoutes(db)],
+		routes: [
+			...runRoutes(db),
+			...viewStateRoutes(db),
+			...diffRoutes(db),
+			...contextRoutes(db),
+			...prRoutes(db),
+			...commentRoutes(db),
+		],
 	});
 	const { port } = handle;
 	const url = `http://${LOOPBACK_HOST}:${port}/runs/${encodeURIComponent(runId)}`;
@@ -44,6 +61,23 @@ export async function show(jsonPath: string, base?: string): Promise<void> {
 
 	await handle.close();
 	closeDb();
+}
+
+/**
+ * Recover the branch from a run JSON saved under `~/.stage/runs/`. The layout
+ * is `<runsRoot>/<branch>/<repo-hash>/<sha>.json`, and the branch itself may
+ * contain slashes (e.g. `chatura/wt-foo`), so the branch is everything between
+ * the runs root and the final two path segments. Returns null for paths that
+ * don't live under the runs root.
+ */
+function parseBranchFromRunPath(jsonPath: string): string | null {
+	const runsRoot = path.join(os.homedir(), ".stage", "runs");
+	const resolved = path.resolve(jsonPath);
+	const prefix = `${runsRoot}${path.sep}`;
+	if (!resolved.startsWith(prefix)) return null;
+	const segments = resolved.slice(prefix.length).split(path.sep);
+	if (segments.length < 3) return null;
+	return segments.slice(0, -2).join("/");
 }
 
 function loadChaptersFile(jsonPath: string, base?: string): ChaptersFile {

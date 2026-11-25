@@ -8,7 +8,7 @@ const SHA = {
 } as const;
 
 export function makeRepoContext(over: Partial<RepoContext> = {}): RepoContext {
-	return { root: "/repo", originUrl: null, ...over };
+	return { root: "/repo", originUrl: null, headBranch: null, ...over };
 }
 
 export function makeFixture(over: Partial<ChaptersFile> = {}): ChaptersFile {

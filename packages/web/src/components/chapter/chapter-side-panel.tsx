@@ -7,6 +7,7 @@ import type { FileDiffEntry } from "@/lib/parse-diff";
 import { ChapterFileList } from "./chapter-file-list";
 import { ChapterNavigator } from "./chapter-navigator";
 import { ChapterSummary } from "./chapter-summary";
+import { ReviewContextPanel } from "./review-context-panel";
 
 const MIN_WIDTH = 280;
 const DEFAULT_WIDTH_FRACTION = 0.3;
@@ -44,7 +45,7 @@ export function ChapterSidePanel({
 	onSelectFile,
 	onCopyChapter,
 }: ChapterSidePanelProps) {
-	const { chapterLineCountsMap } = useChapterContext();
+	const { chapterLineCountsMap, runId } = useChapterContext();
 	const lineCounts = chapterLineCountsMap.get(chapter.id);
 	const [width, setWidth] = useState(SSR_FALLBACK_WIDTH);
 	const cleanupRef = useRef<(() => void) | null>(null);
@@ -95,6 +96,7 @@ export function ChapterSidePanel({
 			className="sticky top-[var(--content-top)] flex h-[calc(100vh_-_var(--content-top))] flex-col border-border border-r bg-card/30"
 			style={{ width, minWidth: MIN_WIDTH, maxWidth: `${MAX_WIDTH_FRACTION * 100}vw` }}
 		>
+			<ReviewContextPanel runId={runId} />
 			<div className="shrink-0 border-border border-b">
 				<ChapterNavigator
 					chapter={chapter}

@@ -20,11 +20,30 @@ export interface RepoContext {
 	root: string;
 	/** `origin` remote URL, or null when no `origin` is configured. */
 	originUrl: string | null;
+	/** Current branch, or null when HEAD is detached. */
+	headBranch: string | null;
 }
 
 export function readRepoContext(): RepoContext {
 	const root = readRepoRoot();
-	return { root, originUrl: readOriginUrl(root) };
+	return { root, originUrl: readOriginUrl(root), headBranch: readHeadBranch(root) };
+}
+
+/**
+ * Current branch name, or null when HEAD is detached. `git rev-parse
+ * --abbrev-ref HEAD` prints the literal string `HEAD` in detached state —
+ * which the snapshot-SHA viewing workflow puts us in — so that's treated as null.
+ */
+export function readHeadBranch(repoRoot: string): string | null {
+	try {
+		const out = execFileSync("git", ["-C", repoRoot, "rev-parse", "--abbrev-ref", "HEAD"], {
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "ignore"],
+		}).trim();
+		return out && out !== "HEAD" ? out : null;
+	} catch {
+		return null;
+	}
 }
 
 export function readRepoRoot(): string {

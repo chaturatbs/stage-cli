@@ -1,3 +1,4 @@
+import type { FileViewedSyncResult } from "@stagereview/types/pr";
 import { type ViewState, ViewStateSchema } from "@stagereview/types/view-state";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
@@ -72,6 +73,32 @@ const deleteFileView = (runId: string, path: string) =>
 		fileViewRequest("DELETE", path),
 	);
 
+/**
+ * Mirrors a local file-viewed toggle to GitHub's PR "Viewed" checkbox. Best-effort:
+ * the server returns 200 even when the `gh` mutation fails, so callers warn on
+ * `synced: false` rather than rolling back — local view state stays authoritative.
+ */
+function syncFileViewedToGitHub(
+	runId: string,
+	prId: string,
+	filePath: string,
+	viewed: boolean,
+): void {
+	void jsonFetch<FileViewedSyncResult>(`/api/runs/${encodeURIComponent(runId)}/files-viewed-sync`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ prId, filePath, viewed }),
+	})
+		.then((result) => {
+			if (!result.synced) {
+				console.warn(`GitHub file-viewed sync skipped: ${result.reason ?? "unknown reason"}`);
+			}
+		})
+		.catch((err) => {
+			console.warn(`GitHub file-viewed sync failed: ${err}`);
+		});
+}
+
 export interface UseViewStateDataResult {
 	/** Stable reference; mutates only when the underlying query data changes. */
 	chapterIdSet: ReadonlySet<string>;
@@ -133,7 +160,7 @@ export function useViewStateData(runId: string): UseViewStateDataResult {
 	);
 }
 
-export function useViewState(runId: string): UseViewStateResult {
+export function useViewState(runId: string, prId?: string | null): UseViewStateResult {
 	const queryClient = useQueryClient();
 	const queryKey = useMemo(() => viewStateQueryKey(runId), [runId]);
 	const data = useViewStateData(runId);
@@ -223,6 +250,9 @@ export function useViewState(runId: string): UseViewStateResult {
 				return { ...prev, filePaths: [...prev.filePaths, filePath] };
 			}),
 		onError: (_err, _filePath, ctx) => rollback(ctx),
+		onSuccess: (_data, filePath) => {
+			if (prId) syncFileViewedToGitHub(runId, prId, filePath, true);
+		},
 		onSettled: settle,
 	});
 
@@ -234,6 +264,9 @@ export function useViewState(runId: string): UseViewStateResult {
 				filePaths: prev.filePaths.filter((p) => p !== filePath),
 			})),
 		onError: (_err, _filePath, ctx) => rollback(ctx),
+		onSuccess: (_data, filePath) => {
+			if (prId) syncFileViewedToGitHub(runId, prId, filePath, false);
+		},
 		onSettled: settle,
 	});
 

@@ -7,8 +7,11 @@
   "exports": {
     ".": "./src/index.ts",
     "./chapters": "./src/chapters.ts",
+    "./comment": "./src/comment.ts",
+    "./context": "./src/context.ts",
     "./diff": "./src/diff.ts",
     "./parsed-diff": "./src/parsed-diff.ts",
+    "./pr": "./src/pr.ts",
     "./prologue": "./src/prologue.ts",
     "./view-state": "./src/view-state.ts"
   },

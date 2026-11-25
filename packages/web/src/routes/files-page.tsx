@@ -16,6 +16,7 @@ import { useActiveFileOnScroll } from "@/lib/use-active-file-on-scroll";
 import { useDiffPatch } from "@/lib/use-diff-patch";
 import { useFileCollapseState } from "@/lib/use-file-collapse-state";
 import { useFileNavigationKeys } from "@/lib/use-file-navigation-keys";
+import { usePrContext } from "@/lib/use-pr-context";
 import { useViewState } from "@/lib/use-view-state";
 
 interface FilesPageProps {
@@ -30,7 +31,11 @@ export function FilesPage({ runId, scrollTo }: FilesPageProps) {
 	const entries = useMemo(() => sortFileDiffEntries(rawEntries), [rawEntries]);
 	const files = useMemo(() => entries.map((e) => e.file), [entries]);
 
-	const { filePathSet, markFileViewed, unmarkFileViewed } = useViewState(runId);
+	const { data: prData } = usePrContext(runId);
+	const { filePathSet, markFileViewed, unmarkFileViewed } = useViewState(
+		runId,
+		prData?.pr?.id ?? null,
+	);
 	const handleToggleViewed = useCallback(
 		(path: string) => {
 			if (filePathSet.has(path)) unmarkFileViewed(path);

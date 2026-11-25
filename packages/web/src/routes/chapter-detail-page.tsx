@@ -1,9 +1,12 @@
+import type { SelectedLineRange } from "@pierre/diffs";
 import type { Chapter, LineRef } from "@stagereview/types/chapters";
 import type { FileContentsMap } from "@stagereview/types/diff";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { ChapterSidePanel } from "@/components/chapter";
+import { ChapterSidePanel, TextSelectionPopup } from "@/components/chapter";
+import { CommentComposer } from "@/components/chapter/comment-composer";
+import { ReviewSidebar, type ReviewTab } from "@/components/chapter/review-sidebar";
 import {
 	type ChapterOverlayProps,
 	FileDiffList,
@@ -27,9 +30,12 @@ import {
 	useChapterNavigationKeys,
 } from "@/lib/use-chapter-navigation-keys";
 import { useChapters } from "@/lib/use-chapters";
+import { useComments } from "@/lib/use-comments";
 import { useDiffPatch } from "@/lib/use-diff-patch";
+import { type LineAnchor, useDiffSelection } from "@/lib/use-diff-selection";
 import { useFileCollapseState } from "@/lib/use-file-collapse-state";
 import { useFileNavigationKeys } from "@/lib/use-file-navigation-keys";
+import { usePrContext } from "@/lib/use-pr-context";
 import { useViewState } from "@/lib/use-view-state";
 
 interface ChapterDetailPageProps {
@@ -81,7 +87,8 @@ function ChapterDetailContent({
 	fileContents,
 }: ChapterDetailContentProps) {
 	const { runId, chapters: allChapters } = useChapterContext();
-	const view = useViewState(runId);
+	const { data: prData } = usePrContext(runId);
+	const view = useViewState(runId, prData?.pr?.id ?? null);
 	const [focusedKeyChangeId, setFocusedKeyChangeId] = useState<string | null>(null);
 
 	// Reset focus when the chapter changes — focus is "currently selected"
@@ -114,6 +121,63 @@ function ChapterDetailContent({
 	);
 
 	const diffListRef = useRef<FileDiffListHandle>(null);
+	const diffContainerRef = useRef<HTMLDivElement>(null);
+
+	const { selection: diffSelection, clear: clearDiffSelection } =
+		useDiffSelection(diffContainerRef);
+	const [contextQuery, setContextQuery] = useState<string | null>(null);
+	const [reviewTab, setReviewTab] = useState<ReviewTab>("context");
+	const [composer, setComposer] = useState<{ anchor: LineAnchor; rect: DOMRect } | null>(null);
+	const { createComment, isCreating } = useComments(runId);
+
+	const handleFindContext = useCallback(
+		(text: string) => {
+			setContextQuery(text);
+			setReviewTab("context");
+			clearDiffSelection();
+		},
+		[clearDiffSelection],
+	);
+
+	const handleStartComment = useCallback(() => {
+		if (!diffSelection?.anchor) return;
+		setComposer({ anchor: diffSelection.anchor, rect: diffSelection.rect });
+		clearDiffSelection();
+	}, [diffSelection, clearDiffSelection]);
+
+	const handleSubmitComment = useCallback(
+		async (body: string) => {
+			if (!composer) return;
+			await createComment({ ...composer.anchor, body });
+			setComposer(null);
+			setReviewTab("comments");
+		},
+		[composer, createComment],
+	);
+
+	// Selecting a comment in the sidebar highlights its lines via Pierre's
+	// native line selection (distinct styling from the key-change overlay) and
+	// scrolls the diff to them.
+	const [selectedAnchor, setSelectedAnchor] = useState<LineAnchor | null>(null);
+	const selectedLinesByFile = useMemo<ReadonlyMap<string, SelectedLineRange> | undefined>(() => {
+		if (!selectedAnchor) return undefined;
+		return new Map([
+			[
+				selectedAnchor.filePath,
+				{
+					start: selectedAnchor.startLine,
+					side: selectedAnchor.side,
+					end: selectedAnchor.endLine,
+					endSide: selectedAnchor.side,
+				},
+			],
+		]);
+	}, [selectedAnchor]);
+
+	const handleSelectComment = useCallback((anchor: LineAnchor) => {
+		setSelectedAnchor(anchor);
+		diffListRef.current?.scrollToLine(anchor.filePath, anchor.side, anchor.startLine);
+	}, []);
 
 	const chapterFiles = useMemo(() => chapterEntries.map((e) => e.file), [chapterEntries]);
 	const chapterFilePaths = useMemo(() => chapterFiles.map((f) => f.path), [chapterFiles]);
@@ -243,36 +307,69 @@ function ChapterDetailContent({
 	);
 
 	return (
-		<SidebarLayout
-			sidebar={
-				<ChapterSidePanel
-					chapter={chapter}
-					chapterIndex={chapterIndex}
-					chapterEntries={chapterEntries}
-					viewedChapterIds={view.chapterIdSet}
-					checkedKeyChangeIds={view.keyChangeIdSet}
-					viewedFilePathSet={view.filePathSet}
-					focusedKeyChangeId={focusedKeyChangeId}
-					onToggleChapterViewed={handleToggleChapterViewed}
-					onToggleKeyChangeChecked={handleToggleKeyChangeChecked}
-					onToggleFileViewed={handleToggleFileViewed}
-					onFocusKeyChange={(id) => handleFocusKeyChange(id)}
-					onSelectFile={handleSelectFile}
-					onCopyChapter={handleCopyChapter}
+		<>
+			<SidebarLayout
+				sidebar={
+					<ChapterSidePanel
+						chapter={chapter}
+						chapterIndex={chapterIndex}
+						chapterEntries={chapterEntries}
+						viewedChapterIds={view.chapterIdSet}
+						checkedKeyChangeIds={view.keyChangeIdSet}
+						viewedFilePathSet={view.filePathSet}
+						focusedKeyChangeId={focusedKeyChangeId}
+						onToggleChapterViewed={handleToggleChapterViewed}
+						onToggleKeyChangeChecked={handleToggleKeyChangeChecked}
+						onToggleFileViewed={handleToggleFileViewed}
+						onFocusKeyChange={(id) => handleFocusKeyChange(id)}
+						onSelectFile={handleSelectFile}
+						onCopyChapter={handleCopyChapter}
+					/>
+				}
+				rightSidebar={
+					<ReviewSidebar
+						runId={runId}
+						activeTab={reviewTab}
+						onTabChange={setReviewTab}
+						contextQuery={contextQuery}
+						onClearContext={() => setContextQuery(null)}
+						onSelectComment={handleSelectComment}
+					/>
+				}
+			>
+				<div ref={diffContainerRef}>
+					<FileDiffList
+						key={chapter.id}
+						ref={diffListRef}
+						entries={chapterEntries}
+						emptyMessage="No changes in this chapter"
+						viewedPathSet={view.filePathSet}
+						onToggleViewed={handleToggleFileViewed}
+						collapseState={collapseState}
+						chapterOverlay={chapterOverlay}
+						selectedLinesByFile={selectedLinesByFile}
+					/>
+				</div>
+			</SidebarLayout>
+			{diffSelection ? (
+				<TextSelectionPopup
+					selectedText={diffSelection.text}
+					rect={diffSelection.rect}
+					onFindContext={handleFindContext}
+					onComment={diffSelection.anchor ? handleStartComment : undefined}
+					onDismiss={clearDiffSelection}
 				/>
-			}
-		>
-			<FileDiffList
-				key={chapter.id}
-				ref={diffListRef}
-				entries={chapterEntries}
-				emptyMessage="No changes in this chapter"
-				viewedPathSet={view.filePathSet}
-				onToggleViewed={handleToggleFileViewed}
-				collapseState={collapseState}
-				chapterOverlay={chapterOverlay}
-			/>
-		</SidebarLayout>
+			) : null}
+			{composer ? (
+				<CommentComposer
+					anchor={composer.anchor}
+					rect={composer.rect}
+					isSubmitting={isCreating}
+					onSubmit={handleSubmitComment}
+					onCancel={() => setComposer(null)}
+				/>
+			) : null}
+		</>
 	);
 }
 
