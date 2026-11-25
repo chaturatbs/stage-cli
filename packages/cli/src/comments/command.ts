@@ -98,8 +98,9 @@ export function commentsCommand(): Command {
 		.argument("<threadId>", "Thread ID or an unambiguous prefix (6+ characters)")
 		.requiredOption("--body <text>", "Reply text")
 		.action(async (threadId: string, opts: { body: string }) => {
+			const body = requireBody(opts.body);
 			await withCli((cli) => {
-				const { thread } = cli.reply(threadId, requireBody(opts.body));
+				const { thread } = cli.reply(threadId, body);
 				process.stdout.write(`Replied to thread ${describeThread(thread)}.\n`);
 			});
 		});
@@ -110,8 +111,8 @@ export function commentsCommand(): Command {
 		.argument("<threadId>", "Thread ID or an unambiguous prefix (6+ characters)")
 		.option("--body <text>", 'Closing reply, for example "Fixed: renamed the helper"')
 		.action(async (threadId: string, opts: { body?: string }) => {
+			const body = opts.body === undefined ? undefined : requireBody(opts.body);
 			await withCli((cli) => {
-				const body = opts.body === undefined ? undefined : requireBody(opts.body);
 				const thread = cli.resolve(threadId, body);
 				process.stdout.write(`Resolved thread ${describeThread(thread)}.\n`);
 			});
